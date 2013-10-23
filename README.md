@@ -3,6 +3,10 @@ HocrConverter
 
 Create PDFs and plain text from hOCR documents
 
+Originally from jbrinley
+See https://github.com/jbrinley/HocrConverter
+and http://xplus3.net/2009/04/02/convert-hocr-to-pdf/
+
 Changes by C.Holtermann
 
 Original script didn't work for me so I made some changes to make it work for me
