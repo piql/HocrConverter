@@ -63,11 +63,11 @@ class HocrConverter():
       if matches:
         coords = matches.group(1).split()
         out = (int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]))
-        return {"bbox",out}
+        return {"bbox":out}
    
       matches = self.filenamePattern.search(element.attrib['title'])
       if matches:
-        return {"file",matches.groups()[0]}
+        return {"file":matches.groups()[0]}
     
     return None
     
@@ -97,28 +97,8 @@ class HocrConverter():
       self.xmlns = matches.group(1)
     else:
       self.xmlns = ''
-      
-  def to_pdf(self, imageFileName, outFileName, fontname="Courier", fontsize=8):
-    """
-    Creates a PDF file with an image superimposed on top of the text.
-    
-    Text is positioned according to the bounding box of the lines in
-    the hOCR file.
-    
-    The image need not be identical to the image used to create the hOCR file.
-    It can be scaled, have a lower resolution, different color mode, etc.
-    """
-    if self.hocr is None:
-      # warn that no text will be embedded in the output PDF
-      print "Warning: No hOCR file specified. PDF will be image-only."
-    
-      for div in self.hocr.findall(".//%sdiv"%(self.xmlns)):
-        print div
-        if div.attrib['class'] == 'ocr_page':
-          parse_result = self.parse_element_title(div)
-          if parse_result.has_key("file"):
-            imageFileName=parse_result["file"] 
-            print "hocr-File image", imageFileName
+
+  def _setup_image(self, imageFileName):
     
     print "Image File:", imageFileName
       
@@ -134,7 +114,36 @@ class HocrConverter():
       # we have to make a reasonable guess
       # set to None for now and try again using info from hOCR file
       width = height = None
+    
+    return (im, width, height)
       
+  def to_pdf(self, imageFileName, outFileName, fontname="Courier", fontsize=8):
+    """
+    Creates a PDF file with an image superimposed on top of the text.
+    
+    Text is positioned according to the bounding box of the lines in
+    the hOCR file.
+    
+    The image need not be identical to the image used to create the hOCR file.
+    It can be scaled, have a lower resolution, different color mode, etc.
+    """
+    
+    pdf = Canvas(outFileName, pageCompression=1)
+    
+    if self.hocr is None:
+      # warn that no text will be embedded in the output PDF
+      print "Warning: No hOCR file specified. PDF will be image-only."
+    
+      for div in self.hocr.findall(".//%sdiv"%(self.xmlns)):
+        print div
+        if div.attrib['class'] == 'ocr_page':
+          parse_result = self.parse_element_title(div)
+          if parse_result.has_key("file"):
+            imageFileName=parse_result["file"] 
+            print "hocr-File image", imageFileName
+    
+    
+    im, width, height = self._setup_image(imageFileName)
       
     ocr_dpi = (300, 300) # a default, in case we can't find it
     
@@ -144,13 +153,22 @@ class HocrConverter():
       for div in self.hocr.findall(".//%sdiv"%(self.xmlns)):
         print div
         if div.attrib['class'] == 'ocr_page':
-          if page_count == 1:
-            print "Only processing one page."
-            break # there shouldn't be more than one, and if there is, we don't want it
+          #if page_count == 2:
+          #  print "Only processing one page."
+          #  break # there shouldn't be more than one, and if there is, we don't want it
           
           coords = self.element_coordinates(div)
           parse_result = self.parse_element_title(div)
           print "Parse Results:",parse_result
+          
+          if parse_result.has_key("file"):
+            imageFileName_ocr_page = parse_result["file"] 
+            print "ocr_page file", imageFileName_ocr_page
+            
+            im, width, height = self._setup_image(imageFileName_ocr_page)
+            print "width, heigth:", width, height
+
+          
           ocrwidth = coords[2]-coords[0]
           ocrheight = coords[3]-coords[1]
           
@@ -171,67 +189,67 @@ class HocrConverter():
          
           print "ocr_dpi :", ocr_dpi
           
-          page_1 = div
+          page = div
           page_count += 1
             
-    if width is None:
-      # no dpi info with the image, and no help from the hOCR file either
-      # this will probably end up looking awful, so issue a warning
-      print "Warning: DPI unavailable for image %s. Assuming 96 DPI."%(imageFileName)
-      width = float(im.size[0])/96
-      height = float(im.size[1])/96
-      
-    # create the PDF file
-    pdf = Canvas(outFileName, pagesize=(width*inch, height*inch), pageCompression=1) # page size in points (1/72 in.)
-    
-    # put the image on the page, scaled to fill the page
-    pdf.drawInlineImage(im, 0, 0, width=width*inch, height=height*inch)
-    
-    if self.hocr is not None:
-      for line in page_1.findall(".//%sspan"%(self.xmlns)):
-        #self.hocr.findall(".//%sspan"%(self.xmlns)):
-        if line.attrib['class'] == 'ocr_line':
-          coords = self.element_coordinates(line)
-          parse_result = self.parse_element_title(line)
+          if width is None:
+            # no dpi info with the image, and no help from the hOCR file either
+            # this will probably end up looking awful, so issue a warning
+            print "Warning: DPI unavailable for image %s. Assuming 96 DPI."%(imageFileName)
+            width = float(im.size[0])/96
+            height = float(im.size[1])/96
+            
+          # create the PDF file
+          pdf.setPageSize((width*inch, height*inch)) # page size in points (1/72 in.)
           
-          text = pdf.beginText()
-          text.setFont(fontname, fontsize)
-          text.setTextRenderMode(0) # invisible = 3
+          # put the image on the page, scaled to fill the page
+          pdf.drawInlineImage(im, 0, 0, width=width*inch, height=height*inch)
+          
+          if self.hocr is not None:
+            for line in page.findall(".//%sspan"%(self.xmlns)):
+              #self.hocr.findall(".//%sspan"%(self.xmlns)):
+              if line.attrib['class'] == 'ocr_line':
+                coords = self.element_coordinates(line)
+                parse_result = self.parse_element_title(line)
+                
+                text = pdf.beginText()
+                text.setFont(fontname, fontsize)
+                text.setTextRenderMode(0) # invisible = 3
+               
+                text.setFillColorRGB(255,0,0)
+                
+                # set cursor to bottom left corner of line bbox (adjust for dpi)
+                
+                text_corner1a = (float(coords[0])/ocr_dpi[0])*inch
+                text_corner1b = (height*inch)-(float(coords[3])/ocr_dpi[1])*inch
+                text_corner1b = (float(coords[1])/ocr_dpi[1])*inch
+
+                text_corner2a = (float(coords[2])/ocr_dpi[0])*inch
+                text_corner2b = (float(coords[3])/ocr_dpi[1])*inch
+                
+                text.setTextOrigin( text_corner1a, text_corner1b )
+                
+                # scale the width of the text to fill the width of the line's bbox
+                text.setHorizScale( (((float(coords[2])/ocr_dpi[0]*inch)-(float(coords[0])/ocr_dpi[0]*inch))/pdf.stringWidth(line.text.rstrip(), fontname, fontsize))*100)
+                
+                # write the text to the page
+                text.textLine(line.text.rstrip())
+
+                print "processing", coords,"->", text_corner1a, text_corner1b, text_corner2a, text_corner2b, ":", line.text.rstrip()
+                pdf.drawText(text)
+
+                pdf.setStrokeColorRGB(0,255,0.3)
+                pdf.circle( text_corner1a, text_corner1b, 1)
+                pdf.circle( text_corner2a, text_corner2b, 1)
+
+                width = text_corner2a - text_corner1a
+                height = text_corner2b - text_corner1b
+          
+                pdf.rect( text_corner1a, text_corner1b, width, height);
          
-          text.setFillColorRGB(255,0,0)
-          
-          # set cursor to bottom left corner of line bbox (adjust for dpi)
-          
-          text_corner1a = (float(coords[0])/ocr_dpi[0])*inch
-          text_corner1b = (height*inch)-(float(coords[3])/ocr_dpi[1])*inch
-          text_corner1b = (float(coords[1])/ocr_dpi[1])*inch
-
-          text_corner2a = (float(coords[2])/ocr_dpi[0])*inch
-          text_corner2b = (float(coords[3])/ocr_dpi[1])*inch
-          
-          text.setTextOrigin( text_corner1a, text_corner1b )
-          
-          # scale the width of the text to fill the width of the line's bbox
-          text.setHorizScale( (((float(coords[2])/ocr_dpi[0]*inch)-(float(coords[0])/ocr_dpi[0]*inch))/pdf.stringWidth(line.text.rstrip(), fontname, fontsize))*100)
-          
-          # write the text to the page
-          text.textLine(line.text.rstrip())
-
-          print "processing", coords,"->", text_corner1a, text_corner1b, text_corner2a, text_corner2b, ":", line.text.rstrip()
-          pdf.drawText(text)
-
-          pdf.setStrokeColorRGB(0,255,0.3)
-          pdf.circle( text_corner1a, text_corner1b, 1)
-          pdf.circle( text_corner2a, text_corner2b, 1)
-
-          width = text_corner2a - text_corner1a
-          height = text_corner2b - text_corner1b
-    
-          pdf.rect( text_corner1a, text_corner1b, width, height);
-   
-    #a= 1/0 
-    # finish up the page and save it
-    pdf.showPage()
+          #a= 1/0 
+          # finish up the page and save it
+          pdf.showPage()
     pdf.save()
   
   def to_text(self, outFileName):

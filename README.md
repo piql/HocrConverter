@@ -18,6 +18,8 @@ The calculation of the text positions was inversed in height.
 
 I made the skript draw the bounding boxes and made the text visible.
 
+Multiple pages in ocropus hocr rescpected.
+
 Like this the script is rather something to understand the concept.
 
 Maybe it's useful for others trying to understand OCR.
