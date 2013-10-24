@@ -28,6 +28,9 @@ Included some aspects from the fork of https://github.com/zw/HocrConverter:
 
 He seems to use tesseract hocr files. I haven't tested that. I didn't include the "word"-object interpretation.
 
+For command line parsing and validation I use some external libraries:
+- docopt
+- schema
 
 Like this the script is rather something to understand the concept.
 

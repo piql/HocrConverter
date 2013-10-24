@@ -1,7 +1,38 @@
+"""HocrConverter
+
+Usage:
+  HocrConverter.py [-tIbm] <inputHocrFile> <outputPdfFile>
+  HocrConverter.py [-tIbnm] <inputHocrFile> <outputPdfFile> <inputImageFile> ...
+  HocrConverter.py (-h | --help)
+
+Options:
+  -h --help     Show this screen.
+  -t            Make ocr-text visible
+  -I            include images
+  -b            draw bounding boxes around ocr-text
+  -n            don't read images supplied in hocr-file
+  -m            do multiple pages in hocr and output pdf
+
+"""
+
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.units import inch
 from xml.etree.ElementTree import ElementTree
-import Image, re, sys
+import Image
+import re
+import sys
+try:
+  from docopt import docopt
+except ImportError:
+  exit('This program requires that `docopt` command line parsing library'
+       ' is installed: \n pip install docopt\n'
+       'https://github.com/docopt/docopt')
+try:
+  from schema import Schema, And, Or, Use, SchemaError, Optional
+except ImportError:
+  exit('This program requires that `schema` data-validation library'
+       ' is installed: \n pip install schema\n'
+       'https://github.com/halst/schema')
 
 class HocrConverter():
   """
@@ -117,7 +148,7 @@ class HocrConverter():
     
     return (im, width, height)
       
-  def to_pdf(self, imageFileName, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, takePictureFromHocr=True, multiplePages=False):
+  def to_pdf(self, imageFileName, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False):
     """
     Creates a PDF file with an image superimposed on top of the text.
     
@@ -167,7 +198,7 @@ class HocrConverter():
           print "Parse Results:",parse_result
           
           if parse_result.has_key("file"):
-            if takePictureFromHocr:
+            if not noPictureFromHocr:
               imageFileName_ocr_page = parse_result["file"] 
               print "ocr_page file", imageFileName_ocr_page
             
@@ -279,38 +310,60 @@ class HocrConverter():
     f.write(self.__str__())
     f.close()
 
+def setGlobal( varName ):
+  def setValue( value ):
+    print varName, "=", value
+    globals()[varName] = value;
+    return True
+  return setValue
+
+def appendGlobal( varName ):
+  def appendValue( value ):
+    globals()[varName].append(value)
+    print varName,"=",globals()[varName]
+    return True
+  return appendValue
+
 if __name__ == "__main__":
   
-  # Taking care of command line Arguments
-  if len(sys.argv) < 4:
-    print 'Usage: python HocrConverter.py [-t] [-I] [-b] [-f] [-m] inputHocrFile inputImageFile outputPdfFile'
-    sys.exit(1)
+  # Variables to control program function
   withVisibleOCRText = False;
   withVisibleImage = True;
   withVisibleBoundingBoxes = False;
-  takePictureFromHocr = True
+  noPictureFromHocr = False
   multiplePages = False
-
-  # Only single Arguments possible, not combinations like -tIbf
-  while sys.argv[1][0] == "-":
-    arg = sys.argv.pop(1)
-    if arg == "-t":
-      withVisibleOCRText = True;
-    elif arg == "-I":
-      withVisibleImage = False;
-    elif arg == "-b":
-      withVisibleBoundingBoxes = True; 
-    elif arg == "-n":
-      takePictureFromHocr = False
-    elif arg == "-m":
-      multiplePages = True
+  inputImageFileNames = []
+  inputImageFileName = None
+  inputHocrFileName = None
   
-  if takePictureFromHocr:
-    inputImageFileName = None
-    outputPdfFileName = sys.argv[2]
-  else:
-    inputImageFileName = sys.argv[2]
-    outputPdfFileName = sys.argv[3]
+  # Taking care of command line arguments
+  arguments = docopt(__doc__)
+  print(arguments)
+  
+  # Validation of arguments and setting of global variables
+  schema = Schema({
+        '<inputHocrFile>': And( setGlobal( "inputHocrFileName" ), Use(open, error="Can't open <inputHocrFile>") ) ,
+        '--help': bool,
+        '-I': setGlobal( "withVisibleImage" ),
+        '-b': setGlobal( "withVisibleBoundingBoxes" ),
+        '-m': setGlobal( "multiplePages" ),
+        '-n': setGlobal( "noPictureFromHocr" ),
+        '-t': setGlobal( "withVisibleOCRText" ),
+        '<inputImageFile>': [ And( appendGlobal( "inputImageFileNames" ), Use(open, error="Can't open <inputImageFile>") ) ],
+        '<outputPdfFile>': setGlobal( "outputPdfFileName" ) })
+  try:
+    args = schema.validate(arguments)
+  except SchemaError as e:
+    print "Error:"
+    print " ",e
+    print "Error Details:"
+    print " ", e.autos
+    exit(1) 
 
-  hocr = HocrConverter(sys.argv[1])
-  hocr.to_pdf( inputImageFileName, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, takePictureFromHocr=takePictureFromHocr, multiplePages=multiplePages )
+  if inputImageFileNames:
+    inputImageFileName = inputImageFileNames[0]
+  else:
+    inputImageFileName = None  
+
+  hocr = HocrConverter( inputHocrFileName )
+  hocr.to_pdf( inputImageFileName, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, noPictureFromHocr=noPictureFromHocr, multiplePages=multiplePages )
