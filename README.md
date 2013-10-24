@@ -18,7 +18,16 @@ The calculation of the text positions was inversed in height.
 
 I made the skript draw the bounding boxes and made the text visible.
 
-Multiple pages in ocropus hocr rescpected.
+Multiple pages in ocropus hocr respected.
+
+Included some aspects from the fork of https://github.com/zw/HocrConverter:
+ - some more command line arguments
+ -- draw bounding boxes
+ -- draw text
+ -- include image
+
+He seems to use tesseract hocr files. I haven't tested that. I didn't include the "word"-object interpretation.
+
 
 Like this the script is rather something to understand the concept.
 

@@ -117,7 +117,7 @@ class HocrConverter():
     
     return (im, width, height)
       
-  def to_pdf(self, imageFileName, outFileName, fontname="Courier", fontsize=8):
+  def to_pdf(self, imageFileName, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, takePictureFromHocr=True, multiplePages=False):
     """
     Creates a PDF file with an image superimposed on top of the text.
     
@@ -127,7 +127,8 @@ class HocrConverter():
     The image need not be identical to the image used to create the hOCR file.
     It can be scaled, have a lower resolution, different color mode, etc.
     """
-    
+   
+    # create the PDF file 
     pdf = Canvas(outFileName, pageCompression=1)
     
     if self.hocr is None:
@@ -142,8 +143,10 @@ class HocrConverter():
             imageFileName=parse_result["file"] 
             print "hocr-File image", imageFileName
     
-    
-    im, width, height = self._setup_image(imageFileName)
+    if imageFileName:
+      im, width, height = self._setup_image(imageFileName)
+    else:
+      im = width = height = None 
       
     ocr_dpi = (300, 300) # a default, in case we can't find it
     
@@ -151,23 +154,25 @@ class HocrConverter():
     if self.hocr is not None:
       page_count = 0
       for div in self.hocr.findall(".//%sdiv"%(self.xmlns)):
-        print div
+        print "-div" 
         if div.attrib['class'] == 'ocr_page':
-          #if page_count == 2:
-          #  print "Only processing one page."
-          #  break # there shouldn't be more than one, and if there is, we don't want it
+          if page_count >= 1:
+            if not multiplePages:
+              print "Only processing one page."
+              break # there shouldn't be more than one, and if there is, we don't want it
           
+          print div
           coords = self.element_coordinates(div)
           parse_result = self.parse_element_title(div)
           print "Parse Results:",parse_result
           
           if parse_result.has_key("file"):
-            imageFileName_ocr_page = parse_result["file"] 
-            print "ocr_page file", imageFileName_ocr_page
+            if takePictureFromHocr:
+              imageFileName_ocr_page = parse_result["file"] 
+              print "ocr_page file", imageFileName_ocr_page
             
-            im, width, height = self._setup_image(imageFileName_ocr_page)
-            print "width, heigth:", width, height
-
+              im, width, height = self._setup_image(imageFileName_ocr_page)
+              print "width, heigth:", width, height
           
           ocrwidth = coords[2]-coords[0]
           ocrheight = coords[3]-coords[1]
@@ -199,26 +204,21 @@ class HocrConverter():
             width = float(im.size[0])/96
             height = float(im.size[1])/96
             
-          # create the PDF file
+          # PDF page size
           pdf.setPageSize((width*inch, height*inch)) # page size in points (1/72 in.)
           
           # put the image on the page, scaled to fill the page
-          pdf.drawInlineImage(im, 0, 0, width=width*inch, height=height*inch)
+          if withVisibleImage:
+            pdf.drawInlineImage(im, 0, 0, width=width*inch, height=height*inch)
           
           if self.hocr is not None:
             for line in page.findall(".//%sspan"%(self.xmlns)):
-              #self.hocr.findall(".//%sspan"%(self.xmlns)):
               if line.attrib['class'] == 'ocr_line':
                 coords = self.element_coordinates(line)
                 parse_result = self.parse_element_title(line)
                 
                 text = pdf.beginText()
                 text.setFont(fontname, fontsize)
-                text.setTextRenderMode(0) # invisible = 3
-               
-                text.setFillColorRGB(255,0,0)
-                
-                # set cursor to bottom left corner of line bbox (adjust for dpi)
                 
                 text_corner1a = (float(coords[0])/ocr_dpi[0])*inch
                 text_corner1b = (height*inch)-(float(coords[3])/ocr_dpi[1])*inch
@@ -227,29 +227,48 @@ class HocrConverter():
                 text_corner2a = (float(coords[2])/ocr_dpi[0])*inch
                 text_corner2b = (float(coords[3])/ocr_dpi[1])*inch
                 
-                text.setTextOrigin( text_corner1a, text_corner1b )
+                text_width = text_corner2a - text_corner1a
+                text_height = text_corner2b - text_corner1b
                 
+                # set cursor to bottom left corner of line bbox (adjust for dpi)
+                text.setTextOrigin( text_corner1a, text_corner1b )
+             
+                # The content of the text to write  
+                textContent = line.text
+                if ( textContent == None ):
+                  textContent = u""
+                textContent = textContent.rstrip()
+
                 # scale the width of the text to fill the width of the line's bbox
-                text.setHorizScale( (((float(coords[2])/ocr_dpi[0]*inch)-(float(coords[0])/ocr_dpi[0]*inch))/pdf.stringWidth(line.text.rstrip(), fontname, fontsize))*100)
+                if len(textContent) != 0:
+                  text.setHorizScale( ((( float(coords[2])/ocr_dpi[0]*inch ) - ( float(coords[0])/ocr_dpi[0]*inch )) / pdf.stringWidth( textContent.rstrip(), fontname, fontsize))*100)
+
+                if not withVisibleOCRText:
+                  #text.setTextRenderMode(0) # visible
+                #else:
+                  text.setTextRenderMode(3) # invisible
+               
+                # Text color
+                text.setFillColorRGB(255,0,0)
                 
                 # write the text to the page
-                text.textLine(line.text.rstrip())
+                text.textLine( textContent )
 
-                print "processing", coords,"->", text_corner1a, text_corner1b, text_corner2a, text_corner2b, ":", line.text.rstrip()
+                print "processing", coords,"->", text_corner1a, text_corner1b, text_corner2a, text_corner2b, ":", textContent
                 pdf.drawText(text)
 
+                pdf.setLineWidth(0.1)
                 pdf.setStrokeColorRGB(0,255,0.3)
-                pdf.circle( text_corner1a, text_corner1b, 1)
-                pdf.circle( text_corner2a, text_corner2b, 1)
-
-                width = text_corner2a - text_corner1a
-                height = text_corner2b - text_corner1b
-          
-                pdf.rect( text_corner1a, text_corner1b, width, height);
          
-          #a= 1/0 
-          # finish up the page and save it
+                # Draw a box around the text object
+                if withVisibleBoundingBoxes: 
+                  pdf.rect( text_corner1a, text_corner1b, text_width, text_height);
+         
+          # finish up the page. A blank new one is initialized as well.
           pdf.showPage()
+    
+    # save the pdf file
+    print "Writing pdf."
     pdf.save()
   
   def to_text(self, outFileName):
@@ -261,8 +280,37 @@ class HocrConverter():
     f.close()
 
 if __name__ == "__main__":
+  
+  # Taking care of command line Arguments
   if len(sys.argv) < 4:
-    print 'Usage: python HocrConverter.py inputHocrFile inputImageFile outputPdfFile'
+    print 'Usage: python HocrConverter.py [-t] [-I] [-b] [-f] [-m] inputHocrFile inputImageFile outputPdfFile'
     sys.exit(1)
+  withVisibleOCRText = False;
+  withVisibleImage = True;
+  withVisibleBoundingBoxes = False;
+  takePictureFromHocr = True
+  multiplePages = False
+
+  # Only single Arguments possible, not combinations like -tIbf
+  while sys.argv[1][0] == "-":
+    arg = sys.argv.pop(1)
+    if arg == "-t":
+      withVisibleOCRText = True;
+    elif arg == "-I":
+      withVisibleImage = False;
+    elif arg == "-b":
+      withVisibleBoundingBoxes = True; 
+    elif arg == "-n":
+      takePictureFromHocr = False
+    elif arg == "-m":
+      multiplePages = True
+  
+  if takePictureFromHocr:
+    inputImageFileName = None
+    outputPdfFileName = sys.argv[2]
+  else:
+    inputImageFileName = sys.argv[2]
+    outputPdfFileName = sys.argv[3]
+
   hocr = HocrConverter(sys.argv[1])
-  hocr.to_pdf(sys.argv[2], sys.argv[3])
+  hocr.to_pdf( inputImageFileName, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, takePictureFromHocr=takePictureFromHocr, multiplePages=multiplePages )
