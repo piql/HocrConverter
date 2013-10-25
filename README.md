@@ -32,7 +32,3 @@ Like this the script is rather something to understand the concept.
 Maybe it's useful for others trying to understand OCR.
 
 Work in progress.
-
-TODO:
-- regex: support both keyword file and image
-- regex: support further keywords after file, like this the whole line is interpreted as filename
