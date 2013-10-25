@@ -3,7 +3,7 @@
 Convert Files from hOCR to pdf
 
 Usage:
-  HocrConverter.py [-tIbmnr] [-i <inputHocrFile>] (-o <outputPdfFile>) <inputImageFile>...  
+  HocrConverter.py [-tIbmnrV] [-i <inputHocrFile>] (-o <outputPdfFile>) <inputImageFile>...  
   HocrConverter.py (-h | --help)
 
 Options:
@@ -16,6 +16,7 @@ Options:
   -n                    don't read images supplied in hocr-file
   -m                    do multiple pages in hocr and output pdf
   -r                    take hOCR-image sizes as reference for size of page
+  -V                    vertical Inversion ( for ocropus: false, for tesseract: true )
 
 """
 
@@ -179,7 +180,7 @@ class HocrConverter():
     return (x_min,y_min,x_max,y_max)
 
 
-  def to_pdf(self, imageFileNames, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False, hocrImageReference=False ):
+  def to_pdf(self, imageFileNames, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False, hocrImageReference=False, verticalInversion=False ):
     """
     Creates a PDF file with an image superimposed on top of the text.
     
@@ -240,7 +241,7 @@ class HocrConverter():
       
       print "page:",page
       # Dimensions of ocr-page
-      if page:
+      if page is not None:
         coords = self.element_coordinates( page )
       else:
         coords = (0,0,0,0)
@@ -258,7 +259,7 @@ class HocrConverter():
       # Image from hOCR
       # get dimensions, which may not match the image
       im_ocr = None
-      if page:
+      if page is not None:
         parse_result = self.parse_element_title( page )
         print "Parse Results:",parse_result
         if parse_result.has_key( "file" ):
@@ -303,7 +304,7 @@ class HocrConverter():
         print "Page with extension 0 or without content. Skipping."
       else:
 
-        if page:
+        if page is not None:
           ocr_dpi = (300, 300) # a default, in case we can't find it
         
           if width is None:
@@ -335,25 +336,49 @@ class HocrConverter():
             print "No inline image file supplied."
         
         if self.hocr is not None:
-          for line in page.findall(".//%sspan"%(self.xmlns)):
-            if line.attrib['class'] == 'ocr_line':
-              coords = self.element_coordinates(line)
-              parse_result = self.parse_element_title(line)
+          text_elements = page.findall(".//%sspan"%(self.xmlns))
+          text_elements.extend( page.findall(".//%sp"%(self.xmlns)) )
+          for line in text_elements:
+            text_class = line.attrib['class']
+            if text_class in [ 'ocr_line', 'ocrx_word', 'ocr_carea', 'ocr_par' ]:
+              
+              if text_class == 'ocr_line':
+                textColor = (255,0,0)
+                bboxColor = (0,255,0)
+              elif text_class == 'ocrx_word' :
+                textColor = (255,0,0)
+                bboxColor = (0,255,255)
+              elif text_class == 'ocr_carea' :
+                textColor = (255,0,0)
+                bboxColor = (255,255,0)
+              elif text_class == 'ocr_par' :
+                textColor = (255,0,0)
+                bboxColor = (255,0,0)
+              
+              coords = self.element_coordinates( line )
+              parse_result = self.parse_element_title( line )
               
               text = pdf.beginText()
               text.setFont(fontname, fontsize)
               
-              text_corner1a = (float(coords[0])/ocr_dpi[0])*inch
-              text_corner1b = (float(coords[1])/ocr_dpi[1])*inch
+              text_corner1x = (float(coords[0])/ocr_dpi[0])*inch
+              text_corner1y = (float(coords[1])/ocr_dpi[1])*inch
 
-              text_corner2a = (float(coords[2])/ocr_dpi[0])*inch
-              text_corner2b = (float(coords[3])/ocr_dpi[1])*inch
+              text_corner2x = (float(coords[2])/ocr_dpi[0])*inch
+              text_corner2y = (float(coords[3])/ocr_dpi[1])*inch
               
-              text_width = text_corner2a - text_corner1a
-              text_height = text_corner2b - text_corner1b
+              text_width = text_corner2x - text_corner1x
+              text_height = text_corner2y - text_corner1y
               
+              if verticalInversion:
+                text_corner2y_inv = (height*inch) - text_corner1y
+                text_corner1y_inv = (height*inch) - text_corner2y
+                
+                text_corner1y = text_corner1y_inv
+                text_corner2y = text_corner2y_inv
+
               # set cursor to bottom left corner of line bbox (adjust for dpi)
-              text.setTextOrigin( text_corner1a, text_corner1b )
+              text.setTextOrigin( text_corner1x, text_corner1y )
            
               # The content of the text to write  
               textContent = line.text
@@ -363,28 +388,26 @@ class HocrConverter():
 
               # scale the width of the text to fill the width of the line's bbox
               if len(textContent) != 0:
-                text.setHorizScale( ((( float(coords[2])/ocr_dpi[0]*inch ) - ( float(coords[0])/ocr_dpi[0]*inch )) / pdf.stringWidth( textContent.rstrip(), fontname, fontsize))*100)
+                text.setHorizScale( ((( float(coords[2])/ocr_dpi[0]*inch ) - ( float(coords[0])/ocr_dpi[0]*inch )) / pdf.stringWidth( textContent, fontname, fontsize))*100)
 
               if not withVisibleOCRText:
-                #text.setTextRenderMode(0) # visible
-              #else:
                 text.setTextRenderMode(3) # invisible
              
               # Text color
-              text.setFillColorRGB(255,0,0)
-              
+              text.setFillColorRGB(textColor[0],textColor[1],textColor[2])
+
               # write the text to the page
               text.textLine( textContent )
 
-              print "processing", coords,"->", text_corner1a, text_corner1b, text_corner2a, text_corner2b, ":", textContent
+              print "processing", text_class, coords,"->", text_corner1x, text_corner1y, text_corner2x, text_corner2y, ":", textContent
               pdf.drawText(text)
 
               pdf.setLineWidth(0.1)
-              pdf.setStrokeColorRGB(0,255,0.3)
+              pdf.setStrokeColorRGB(bboxColor[0],bboxColor[1],bboxColor[2])
        
               # Draw a box around the text object
               if withVisibleBoundingBoxes: 
-                pdf.rect( text_corner1a, text_corner1b, text_width, text_height);
+                pdf.rect( text_corner1x, text_corner1y, text_width, text_height);
      
       # finish up the page. A blank new one is initialized as well.
       pdf.showPage()
@@ -426,6 +449,7 @@ if __name__ == "__main__":
   inputImageFileName = None
   inputHocrFileName = None
   hocrImageReference = False
+  verticalInversion=False
 
   # Taking care of command line arguments
   arguments = docopt(__doc__)
@@ -441,6 +465,7 @@ if __name__ == "__main__":
         '-n': setGlobal( "noPictureFromHocr" ),
         '-t': setGlobal( "withVisibleOCRText" ),
         '-r': setGlobal( "hocrImageReference" ),
+        '-V': setGlobal( "verticalInversion" ),
         '<inputImageFile>': [ And( appendGlobal( "inputImageFileNames" ), Use(open, error="Can't open <inputImageFile>") ) ],
         '-o': setGlobal( "outputPdfFileName" ) })
   try:
@@ -453,4 +478,4 @@ if __name__ == "__main__":
     exit(1) 
 
   hocr = HocrConverter( inputHocrFileName )
-  hocr.to_pdf( inputImageFileNames, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, noPictureFromHocr=noPictureFromHocr, multiplePages=multiplePages, hocrImageReference=hocrImageReference )
+  hocr.to_pdf( inputImageFileNames, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, noPictureFromHocr=noPictureFromHocr, multiplePages=multiplePages, hocrImageReference=hocrImageReference, verticalInversion=verticalInversion )
