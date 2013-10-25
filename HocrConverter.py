@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """HocrConverter
 
 Convert Files from hOCR to pdf
