@@ -1,17 +1,21 @@
 """HocrConverter
 
+Convert Files from hOCR to pdf
+
 Usage:
-  HocrConverter.py [-tIbm] <inputHocrFile> <outputPdfFile>
-  HocrConverter.py [-tIbnm] <inputHocrFile> <outputPdfFile> <inputImageFile> ...
+  HocrConverter.py [-tIbmnr] [-i <inputHocrFile>] (-o <outputPdfFile>) <inputImageFile>...  
   HocrConverter.py (-h | --help)
 
 Options:
-  -h --help     Show this screen.
-  -t            Make ocr-text visible
-  -I            include images
-  -b            draw bounding boxes around ocr-text
-  -n            don't read images supplied in hocr-file
-  -m            do multiple pages in hocr and output pdf
+  -h --help             Show this screen.
+  -t                    Make ocr-text visible
+  -i <inputHocrFile>    hOCR input file
+  -o <outputPdfFile>    pdf output
+  -I                    include images
+  -b                    draw bounding boxes around ocr-text
+  -n                    don't read images supplied in hocr-file
+  -m                    do multiple pages in hocr and output pdf
+  -r                    take hOCR-image sizes as reference for size of page
 
 """
 
@@ -107,13 +111,12 @@ class HocrConverter():
     Returns a tuple containing the coordinates of the bounding box around
     an element
     """
-    out = (0,0,0,0)
-    if 'title' in element.attrib:
-      matches = self.boxPattern.search(element.attrib['title'])
-      if matches:
-        coords = matches.group(1).split()
-        out = (int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]))
-    return out
+    text_coords = (0,0,0,0)
+    parse_result = self.parse_element_title( element )
+    if parse_result.has_key("bbox"):
+          text_coords = parse_result["bbox"]
+
+    return text_coords
     
   def parse_hocr(self, hocrFileName):
     """
@@ -147,8 +150,36 @@ class HocrConverter():
       width = height = None
     
     return (im, width, height)
+
+  def get_ocr_text_extension( self, page ):
+    """
+    Get the maximum extension of the area covered by text
+    """
+    if not self.hocr:
+      print "No hOCR."
+      return None
+
+    x_min = x_max = y_min = y_max = 0
+
+    for line in page.findall(".//%sspan"%(self.xmlns)):
+      if line.attrib['class'] == 'ocr_line':
+        text_coords = self.element_coordinates(line)
       
-  def to_pdf(self, imageFileName, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False):
+        for coord_x in [ text_coords[0], text_coords[2] ]:
+          if coord_x > x_max:
+            x_max = coord_x
+          if coord_x < x_min:
+            x_min = coord_x
+        for coord_y in [ text_coords[1], text_coords[3] ]:
+          if coord_y > y_max:
+            y_max = coord_y
+          if coord_y < y_min:
+            y_min = coord_y
+
+    return (x_min,y_min,x_max,y_max)
+
+
+  def to_pdf(self, imageFileNames, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False, hocrImageReference=False ):
     """
     Creates a PDF file with an image superimposed on top of the text.
     
@@ -166,137 +197,197 @@ class HocrConverter():
       # warn that no text will be embedded in the output PDF
       print "Warning: No hOCR file specified. PDF will be image-only."
     
-      for div in self.hocr.findall(".//%sdiv"%(self.xmlns)):
-        print div
-        if div.attrib['class'] == 'ocr_page':
-          parse_result = self.parse_element_title(div)
-          if parse_result.has_key("file"):
-            imageFileName=parse_result["file"] 
-            print "hocr-File image", imageFileName
-    
-    if imageFileName:
-      im, width, height = self._setup_image(imageFileName)
-    else:
-      im = width = height = None 
-      
-    ocr_dpi = (300, 300) # a default, in case we can't find it
-    
-    # get dimensions of the OCR, which may not match the image
+    # Collect pages from hOCR
+    pages = []
     if self.hocr is not None:
-      page_count = 0
-      for div in self.hocr.findall(".//%sdiv"%(self.xmlns)):
-        print "-div" 
+      divs = self.hocr.findall(".//%sdiv"%(self.xmlns))
+      for div in divs:
         if div.attrib['class'] == 'ocr_page':
-          if page_count >= 1:
-            if not multiplePages:
-              print "Only processing one page."
-              break # there shouldn't be more than one, and if there is, we don't want it
-          
-          print div
-          coords = self.element_coordinates(div)
-          parse_result = self.parse_element_title(div)
-          print "Parse Results:",parse_result
-          
-          if parse_result.has_key("file"):
-            if not noPictureFromHocr:
-              imageFileName_ocr_page = parse_result["file"] 
-              print "ocr_page file", imageFileName_ocr_page
-            
-              im, width, height = self._setup_image(imageFileName_ocr_page)
-              print "width, heigth:", width, height
-          
-          ocrwidth = coords[2]-coords[0]
-          ocrheight = coords[3]-coords[1]
-          
-          if not ocrwidth:
-            ocrwidth = im.size[0]
+          pages.append(div)
+    
+    page_count = 0
+    # loop pages
+    while True:
+      page_count += 1
+      
+      if len(pages) >= page_count:
+        page = pages[page_count-1] 
+      else:
+        page = None
 
-          if not ocrheight:
-            ocrheight = im.size[1]
-         
-          print "ocrwidth, ocrheight :", ocrwidth, ocrheight
-          
+      if page_count > 1:
+        if not multiplePages:
+          print "Only processing one page."
+          break # there shouldn't be more than one, and if there is, we don't want it
+     
+      imageFileName = None
+      
+      # Check for image from command line 
+      if imageFileNames:
+        # distinct file
+        if len(imageFileNames) >= page_count:
+          imageFileName = imageFileNames[page_count-1]
+        # repeat the last file
+        else:
+          imageFileName = imageFileNames[-1]
+          # stop if no more ocr date
+          if not page:
+            break
+      else:
+        print "No Images supplied by command line."
+
+      print "Image file name:", imageFileName
+      
+      print "page:",page
+      # Dimensions of ocr-page
+      if page:
+        coords = self.element_coordinates( page )
+      else:
+        coords = (0,0,0,0)
+
+      ocrwidth = coords[2]-coords[0]
+      ocrheight = coords[3]-coords[1]
+      
+      # Load command line image
+      if imageFileName:
+        im, width, height = self._setup_image(imageFileName)
+        print "width, heigth:", width, height
+      else:
+        im = width = height = None
+        
+      # Image from hOCR
+      # get dimensions, which may not match the image
+      im_ocr = None
+      if page:
+        parse_result = self.parse_element_title( page )
+        print "Parse Results:",parse_result
+        if parse_result.has_key( "file" ):
+          imageFileName_ocr_page = parse_result["file"] 
+          print "ocr_page file", imageFileName_ocr_page,
+        
+          if noPictureFromHocr:
+            print "- ignored.",
+          if imageFileName:
+            print "- ignored (overwritten by command line).",
+
+          print
+
+          if ( ( not noPictureFromHocr ) and ( not imageFileName) ) or hocrImageReference:
+            im_ocr, width_ocr, height_ocr = self._setup_image(imageFileName_ocr_page)
+            print "hOCR width, heigth:", width, height
+          if ( not noPictureFromHocr ) and ( not imageFileName):
+            im = im_ocr
+            width = width_ocr
+            heigth = heigth_ocr
+
+        # Get size of text area in hOCR-file
+        ocr_text_x_min, ocr_text_y_min, ocr_text_x_max, ocr_text_y_max = self.get_ocr_text_extension( page )
+        ocr_text_width = ocr_text_x_max
+        ocr_text_height = ocr_text_y_max
+
+        if not ocrwidth:
+          if im_ocr:
+            ocrwidth = im_ocr.size[0]
+          else:
+            ocrwidth = ocr_text_width 
+
+        if not ocrheight:
+          if im_ocr:
+            ocrheight = im_ocr.size[1]
+          else:
+            ocrheight = ocr_text_height
+     
+        print "ocrwidth, ocrheight :", ocrwidth, ocrheight
+     
+      if ( ( not ocrwidth ) and ( ( not width ) or ( not withVisibleImage ) ) ) or ( ( not ocrheight) and ( ( not height ) or ( not withVisibleImage ) ) ):
+        print "Page with extension 0 or without content. Skipping."
+      else:
+
+        if page:
+          ocr_dpi = (300, 300) # a default, in case we can't find it
+        
           if width is None:
             # no dpi info with the image
             # assume OCR was done at 300 dpi
-            width = ocrwidth/300
-            height = ocrheight/300
+            width = ocrwidth / 300.0
+            height = ocrheight / 300.0
+            print "Assuming width, height:",width,height
+        
           ocr_dpi = (ocrwidth/width, ocrheight/height)
-         
+       
           print "ocr_dpi :", ocr_dpi
+        
+        if width is None:
+          # no dpi info with the image, and no help from the hOCR file either
+          # this will probably end up looking awful, so issue a warning
+          print "Warning: DPI unavailable for image %s. Assuming 96 DPI."%(imageFileName)
+          width = float(im.size[0])/96
+          height = float(im.size[1])/96
           
-          page = div
-          page_count += 1
-            
-          if width is None:
-            # no dpi info with the image, and no help from the hOCR file either
-            # this will probably end up looking awful, so issue a warning
-            print "Warning: DPI unavailable for image %s. Assuming 96 DPI."%(imageFileName)
-            width = float(im.size[0])/96
-            height = float(im.size[1])/96
-            
-          # PDF page size
-          pdf.setPageSize((width*inch, height*inch)) # page size in points (1/72 in.)
-          
-          # put the image on the page, scaled to fill the page
-          if withVisibleImage:
+        # PDF page size
+        pdf.setPageSize((width*inch, height*inch)) # page size in points (1/72 in.)
+        
+        # put the image on the page, scaled to fill the page
+        if withVisibleImage:
+          if im:
             pdf.drawInlineImage(im, 0, 0, width=width*inch, height=height*inch)
-          
-          if self.hocr is not None:
-            for line in page.findall(".//%sspan"%(self.xmlns)):
-              if line.attrib['class'] == 'ocr_line':
-                coords = self.element_coordinates(line)
-                parse_result = self.parse_element_title(line)
-                
-                text = pdf.beginText()
-                text.setFont(fontname, fontsize)
-                
-                text_corner1a = (float(coords[0])/ocr_dpi[0])*inch
-                text_corner1b = (height*inch)-(float(coords[3])/ocr_dpi[1])*inch
-                text_corner1b = (float(coords[1])/ocr_dpi[1])*inch
+          else:
+            print "No inline image file supplied."
+        
+        if self.hocr is not None:
+          for line in page.findall(".//%sspan"%(self.xmlns)):
+            if line.attrib['class'] == 'ocr_line':
+              coords = self.element_coordinates(line)
+              parse_result = self.parse_element_title(line)
+              
+              text = pdf.beginText()
+              text.setFont(fontname, fontsize)
+              
+              text_corner1a = (float(coords[0])/ocr_dpi[0])*inch
+              text_corner1b = (float(coords[1])/ocr_dpi[1])*inch
 
-                text_corner2a = (float(coords[2])/ocr_dpi[0])*inch
-                text_corner2b = (float(coords[3])/ocr_dpi[1])*inch
-                
-                text_width = text_corner2a - text_corner1a
-                text_height = text_corner2b - text_corner1b
-                
-                # set cursor to bottom left corner of line bbox (adjust for dpi)
-                text.setTextOrigin( text_corner1a, text_corner1b )
+              text_corner2a = (float(coords[2])/ocr_dpi[0])*inch
+              text_corner2b = (float(coords[3])/ocr_dpi[1])*inch
+              
+              text_width = text_corner2a - text_corner1a
+              text_height = text_corner2b - text_corner1b
+              
+              # set cursor to bottom left corner of line bbox (adjust for dpi)
+              text.setTextOrigin( text_corner1a, text_corner1b )
+           
+              # The content of the text to write  
+              textContent = line.text
+              if ( textContent == None ):
+                textContent = u""
+              textContent = textContent.rstrip()
+
+              # scale the width of the text to fill the width of the line's bbox
+              if len(textContent) != 0:
+                text.setHorizScale( ((( float(coords[2])/ocr_dpi[0]*inch ) - ( float(coords[0])/ocr_dpi[0]*inch )) / pdf.stringWidth( textContent.rstrip(), fontname, fontsize))*100)
+
+              if not withVisibleOCRText:
+                #text.setTextRenderMode(0) # visible
+              #else:
+                text.setTextRenderMode(3) # invisible
              
-                # The content of the text to write  
-                textContent = line.text
-                if ( textContent == None ):
-                  textContent = u""
-                textContent = textContent.rstrip()
+              # Text color
+              text.setFillColorRGB(255,0,0)
+              
+              # write the text to the page
+              text.textLine( textContent )
 
-                # scale the width of the text to fill the width of the line's bbox
-                if len(textContent) != 0:
-                  text.setHorizScale( ((( float(coords[2])/ocr_dpi[0]*inch ) - ( float(coords[0])/ocr_dpi[0]*inch )) / pdf.stringWidth( textContent.rstrip(), fontname, fontsize))*100)
+              print "processing", coords,"->", text_corner1a, text_corner1b, text_corner2a, text_corner2b, ":", textContent
+              pdf.drawText(text)
 
-                if not withVisibleOCRText:
-                  #text.setTextRenderMode(0) # visible
-                #else:
-                  text.setTextRenderMode(3) # invisible
-               
-                # Text color
-                text.setFillColorRGB(255,0,0)
-                
-                # write the text to the page
-                text.textLine( textContent )
-
-                print "processing", coords,"->", text_corner1a, text_corner1b, text_corner2a, text_corner2b, ":", textContent
-                pdf.drawText(text)
-
-                pdf.setLineWidth(0.1)
-                pdf.setStrokeColorRGB(0,255,0.3)
-         
-                # Draw a box around the text object
-                if withVisibleBoundingBoxes: 
-                  pdf.rect( text_corner1a, text_corner1b, text_width, text_height);
-         
-          # finish up the page. A blank new one is initialized as well.
-          pdf.showPage()
+              pdf.setLineWidth(0.1)
+              pdf.setStrokeColorRGB(0,255,0.3)
+       
+              # Draw a box around the text object
+              if withVisibleBoundingBoxes: 
+                pdf.rect( text_corner1a, text_corner1b, text_width, text_height);
+     
+      # finish up the page. A blank new one is initialized as well.
+      pdf.showPage()
     
     # save the pdf file
     print "Writing pdf."
@@ -325,7 +416,6 @@ def appendGlobal( varName ):
   return appendValue
 
 if __name__ == "__main__":
-  
   # Variables to control program function
   withVisibleOCRText = False;
   withVisibleImage = True;
@@ -335,22 +425,24 @@ if __name__ == "__main__":
   inputImageFileNames = []
   inputImageFileName = None
   inputHocrFileName = None
-  
+  hocrImageReference = False
+
   # Taking care of command line arguments
   arguments = docopt(__doc__)
   print(arguments)
   
   # Validation of arguments and setting of global variables
   schema = Schema({
-        '<inputHocrFile>': And( setGlobal( "inputHocrFileName" ), Use(open, error="Can't open <inputHocrFile>") ) ,
+        '-i': And( setGlobal( "inputHocrFileName" ), lambda n: Use(open, error="Can't open <inputHocrFile>") if n else True ) ,
         '--help': bool,
         '-I': setGlobal( "withVisibleImage" ),
         '-b': setGlobal( "withVisibleBoundingBoxes" ),
         '-m': setGlobal( "multiplePages" ),
         '-n': setGlobal( "noPictureFromHocr" ),
         '-t': setGlobal( "withVisibleOCRText" ),
+        '-r': setGlobal( "hocrImageReference" ),
         '<inputImageFile>': [ And( appendGlobal( "inputImageFileNames" ), Use(open, error="Can't open <inputImageFile>") ) ],
-        '<outputPdfFile>': setGlobal( "outputPdfFileName" ) })
+        '-o': setGlobal( "outputPdfFileName" ) })
   try:
     args = schema.validate(arguments)
   except SchemaError as e:
@@ -360,10 +452,5 @@ if __name__ == "__main__":
     print " ", e.autos
     exit(1) 
 
-  if inputImageFileNames:
-    inputImageFileName = inputImageFileNames[0]
-  else:
-    inputImageFileName = None  
-
   hocr = HocrConverter( inputHocrFileName )
-  hocr.to_pdf( inputImageFileName, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, noPictureFromHocr=noPictureFromHocr, multiplePages=multiplePages )
+  hocr.to_pdf( inputImageFileNames, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, noPictureFromHocr=noPictureFromHocr, multiplePages=multiplePages, hocrImageReference=hocrImageReference )
