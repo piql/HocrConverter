@@ -66,7 +66,8 @@ class HocrConverter():
     self.hocr = None
     self.xmlns = ''
     self.boxPattern = re.compile('bbox((\s+\d+){4})')
-    self.filenamePattern = re.compile('file\s+(.*)')
+    # self.filenamePattern = re.compile('file\s+(.*)')  
+    self.filenamePattern = re.compile(".*(file|image)\s((?:\"|')(?:[^'\"]+)(?:['\"])|(?:[^\s'\"]+)).*")
     if hocrFileName is not None:
       self.parse_hocr(hocrFileName)
       
@@ -96,19 +97,21 @@ class HocrConverter():
     return text
   
   def parse_element_title(self, element):
-    
     if 'title' in element.attrib:
+      dict_return = {}
+      
+      vprint( VVERBOSE, element.attrib['title'] )
       matches = self.boxPattern.search(element.attrib['title'])
       if matches:
         coords = matches.group(1).split()
         out = (int(coords[0]),int(coords[1]),int(coords[2]),int(coords[3]))
-        return {"bbox":out}
+        dict_return[ "bbox" ] = out
    
       matches = self.filenamePattern.search(element.attrib['title'])
-      if matches:
-        return {"file":matches.groups()[0]}
+      if matches:        
+        dict_return[ "file" ] = matches.groups()[1].strip("\"'")
     
-    return None
+    return dict_return
     
   def element_coordinates(self, element):
     """
@@ -182,6 +185,16 @@ class HocrConverter():
 
     return (x_min,y_min,x_max,y_max)
 
+  def getTextElements( self, parent_element ):
+    text_element_types = [ "p", "span" ]
+    
+    text_elements = []
+    for cat in text_element_types:
+      cat_text_elements = parent_element.findall(".//%s%s"%(self.xmlns,cat))
+      vprint( VVERBOSE, cat,":",len(cat_text_elements) )
+      text_elements.extend( cat_text_elements )
+
+    return text_elements
 
   def to_pdf(self, imageFileNames, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False, hocrImageReference=False, verticalInversion=False ):
     """
@@ -246,7 +259,7 @@ class HocrConverter():
 
       vprint ( VERBOSE, "Image file name:", imageFileName )
       
-      vprint ( VERBOSE, "page:",page )
+      vprint ( VERBOSE, "page:", page.tag, page.attrib )
       # Dimensions of ocr-page
       if page is not None:
         coords = self.element_coordinates( page )
@@ -268,6 +281,7 @@ class HocrConverter():
       im_ocr = None
       if page is not None:
         parse_result = self.parse_element_title( page )
+        vprint( VVERBOSE, "ocr_page file ?" )
         vprint( VVERBOSE, "Parse Results:",parse_result )
         if parse_result.has_key( "file" ):
           imageFileName_ocr_page = parse_result["file"] 
@@ -341,12 +355,14 @@ class HocrConverter():
             pdf.drawInlineImage(im, 0, 0, width=width*inch, height=height*inch)
           else:
             vprint( INFO, "No inline image file supplied." )
-        
+       
+        # put ocr-content on the page 
         if self.hocr is not None:
-          text_elements = page.findall(".//%sspan"%(self.xmlns))
-          text_elements.extend( page.findall(".//%sp"%(self.xmlns)) )
+          text_elements = self.getTextElements( page )
+          
           for line in text_elements:
-            vprint( VVERBOSE, line )
+            import pdb
+            vprint( VVERBOSE, line.tag, line.attrib )
             if line.attrib.has_key('class'):
               text_class = line.attrib['class']
             else:
@@ -459,11 +475,14 @@ _vprint_text = ""
 
 def vprint( verbosity, *data, **keywords ):
   """
-  logs depending on verbosity level
+  logs/prints depending on verbosity level
+  
   verbosity levels:
-  VVERBOSE = 5 ( -vv )
-  VERBOSE = 10 ( -v )
-  INFO = 20
+    VVERBOSE = 5 ( -vv )
+    VERBOSE = 10 ( -v )
+    INFO = 20
+    WARN = 30    ( -q )
+    ERROR = 40
   """
   
   if "nolinebreak" in keywords:
@@ -477,7 +496,7 @@ def vprint( verbosity, *data, **keywords ):
   for out in data:
     if out_text != "":
       out_text += " "
-    out_text += str(out)
+    out_text += unicode(out)
 
   # If nolinebreak is enabled, save message for next output
   if nolinebreak:
