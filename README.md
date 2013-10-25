@@ -13,16 +13,15 @@ Original script didn't work for me so I made some changes to make it work for me
 
 My configuration is ocropus 0.7 and tesseract 3.02.02
 
-The script is more verbose. It respects the use of filenames in ocropus hocr files ( but not in tesseract for now )
-
 Included some aspects from the fork of https://github.com/zw/HocrConverter:
-some more command line arguments
+
+Some command line arguments:
  - draw bounding boxes
  - draw text
- - include image
  - inverse height ( tesseract and ocropus count differently )
  - multiple pages
  - include Images ( from hOCR or via command line )
+ - verbosity
 
 For command line parsing and validation I use some external libraries:
 - docopt
@@ -33,3 +32,7 @@ Like this the script is rather something to understand the concept.
 Maybe it's useful for others trying to understand OCR.
 
 Work in progress.
+
+TODO:
+- regex: support both keyword file and image
+- regex: support further keywords after file, like this the whole line is interpreted as filename

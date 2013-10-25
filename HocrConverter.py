@@ -3,7 +3,7 @@
 Convert Files from hOCR to pdf
 
 Usage:
-  HocrConverter.py [-tIbmnrV] [-i <inputHocrFile>] (-o <outputPdfFile>) <inputImageFile>...  
+  HocrConverter.py [-tIbmnrV] [-q | -v | -vv] [-i <inputHocrFile>] (-o <outputPdfFile>) [<inputImageFile>]...
   HocrConverter.py (-h | --help)
 
 Options:
@@ -17,6 +17,7 @@ Options:
   -m                    do multiple pages in hocr and output pdf
   -r                    take hOCR-image sizes as reference for size of page
   -V                    vertical Inversion ( for ocropus: false, for tesseract: true )
+  -q | -v | -vv         quiet ( only warnings and errors ) | verbose | very verbose = debug
 
 """
 
@@ -26,16 +27,17 @@ from xml.etree.ElementTree import ElementTree
 import Image
 import re
 import sys
+import logging
 try:
   from docopt import docopt
 except ImportError:
-  exit('This program requires that `docopt` command line parsing library'
+  exit('This scrip requires that python `docopt` command line parsing library'
        ' is installed: \n pip install docopt\n'
        'https://github.com/docopt/docopt')
 try:
   from schema import Schema, And, Or, Use, SchemaError, Optional
 except ImportError:
-  exit('This program requires that `schema` data-validation library'
+  exit('This script requires that python `schema` data-validation library'
        ' is installed: \n pip install schema\n'
        'https://github.com/halst/schema')
 
@@ -135,12 +137,12 @@ class HocrConverter():
 
   def _setup_image(self, imageFileName):
     
-    print "Image File:", imageFileName
+    vprint( INFO, "Image File:", imageFileName )
       
     im = Image.open(imageFileName)
     imwidthpx, imheightpx = im.size
     
-    print "Image Dimensions:", im.size
+    vprint( VERBOSE, "Image Dimensions:", im.size )
     
     if 'dpi' in im.info:
       width = float(im.size[0])/im.info['dpi'][0]
@@ -157,7 +159,7 @@ class HocrConverter():
     Get the maximum extension of the area covered by text
     """
     if not self.hocr:
-      print "No hOCR."
+      vprint( VERBOSE, "No hOCR." )
       return None
 
     x_min = x_max = y_min = y_max = 0
@@ -196,7 +198,7 @@ class HocrConverter():
     
     if self.hocr is None:
       # warn that no text will be embedded in the output PDF
-      print "Warning: No hOCR file specified. PDF will be image-only."
+      vprint( WARN, "Warning: No hOCR file specified. PDF will be image-only." )
     
     # Collect pages from hOCR
     pages = []
@@ -205,11 +207,14 @@ class HocrConverter():
       for div in divs:
         if div.attrib['class'] == 'ocr_page':
           pages.append(div)
+
+    vprint( VVERBOSE, len(pages), "pages;", len(imageFileNames), "image files from command line." ) 
     
     page_count = 0
     # loop pages
     while True:
       page_count += 1
+      vprint( VERBOSE, "page", page_count )
       
       if len(pages) >= page_count:
         page = pages[page_count-1] 
@@ -218,7 +223,7 @@ class HocrConverter():
 
       if page_count > 1:
         if not multiplePages:
-          print "Only processing one page."
+          vprint (INFO, "Only processing one page." )
           break # there shouldn't be more than one, and if there is, we don't want it
      
       imageFileName = None
@@ -232,14 +237,15 @@ class HocrConverter():
         else:
           imageFileName = imageFileNames[-1]
           # stop if no more ocr date
-          if not page:
+          if page == None:
             break
       else:
-        print "No Images supplied by command line."
+        if page == None:
+          break
 
-      print "Image file name:", imageFileName
+      vprint ( VERBOSE, "Image file name:", imageFileName )
       
-      print "page:",page
+      vprint ( VERBOSE, "page:",page )
       # Dimensions of ocr-page
       if page is not None:
         coords = self.element_coordinates( page )
@@ -252,7 +258,7 @@ class HocrConverter():
       # Load command line image
       if imageFileName:
         im, width, height = self._setup_image(imageFileName)
-        print "width, heigth:", width, height
+        vprint( VVERBOSE, "width, heigth:", width, height )
       else:
         im = width = height = None
         
@@ -261,25 +267,25 @@ class HocrConverter():
       im_ocr = None
       if page is not None:
         parse_result = self.parse_element_title( page )
-        print "Parse Results:",parse_result
+        vprint( VVERBOSE, "Parse Results:",parse_result )
         if parse_result.has_key( "file" ):
           imageFileName_ocr_page = parse_result["file"] 
-          print "ocr_page file", imageFileName_ocr_page,
+          vprint( VERBOSE, "ocr_page file", imageFileName_ocr_page, nolinebreak=True )
         
           if noPictureFromHocr:
-            print "- ignored.",
+            vprint( VERBOSE, "- ignored.", nolinebreak=True )
           if imageFileName:
-            print "- ignored (overwritten by command line).",
+            vprint( VERBOSE, "- ignored (overwritten by command line).", nolinebreak=True )
 
-          print
+          vprint( VERBOSE, "" )
 
           if ( ( not noPictureFromHocr ) and ( not imageFileName) ) or hocrImageReference:
             im_ocr, width_ocr, height_ocr = self._setup_image(imageFileName_ocr_page)
-            print "hOCR width, heigth:", width, height
+            vprint( VERBOSE, "hOCR width, heigth:", width, height )
           if ( not noPictureFromHocr ) and ( not imageFileName):
             im = im_ocr
             width = width_ocr
-            heigth = heigth_ocr
+            height = height_ocr
 
         # Get size of text area in hOCR-file
         ocr_text_x_min, ocr_text_y_min, ocr_text_x_max, ocr_text_y_max = self.get_ocr_text_extension( page )
@@ -298,10 +304,10 @@ class HocrConverter():
           else:
             ocrheight = ocr_text_height
      
-        print "ocrwidth, ocrheight :", ocrwidth, ocrheight
+        vprint( VERBOSE, "ocrwidth, ocrheight :", ocrwidth, ocrheight )
      
       if ( ( not ocrwidth ) and ( ( not width ) or ( not withVisibleImage ) ) ) or ( ( not ocrheight) and ( ( not height ) or ( not withVisibleImage ) ) ):
-        print "Page with extension 0 or without content. Skipping."
+        vprint( WARN, "Page with extension 0 or without content. Skipping." )
       else:
 
         if page is not None:
@@ -312,16 +318,16 @@ class HocrConverter():
             # assume OCR was done at 300 dpi
             width = ocrwidth / 300.0
             height = ocrheight / 300.0
-            print "Assuming width, height:",width,height
+            vprint( VERBOSE, "Assuming width, height:",width,height )
         
           ocr_dpi = (ocrwidth/width, ocrheight/height)
        
-          print "ocr_dpi :", ocr_dpi
+          vprint( VERBOSE, "ocr_dpi :", ocr_dpi )
         
         if width is None:
           # no dpi info with the image, and no help from the hOCR file either
           # this will probably end up looking awful, so issue a warning
-          print "Warning: DPI unavailable for image %s. Assuming 96 DPI."%(imageFileName)
+          vprint( WARN, "Warning: DPI unavailable for image %s. Assuming 96 DPI."%(imageFileName) )
           width = float(im.size[0])/96
           height = float(im.size[1])/96
           
@@ -333,13 +339,17 @@ class HocrConverter():
           if im:
             pdf.drawInlineImage(im, 0, 0, width=width*inch, height=height*inch)
           else:
-            print "No inline image file supplied."
+            vprint( INFO, "No inline image file supplied." )
         
         if self.hocr is not None:
           text_elements = page.findall(".//%sspan"%(self.xmlns))
           text_elements.extend( page.findall(".//%sp"%(self.xmlns)) )
           for line in text_elements:
-            text_class = line.attrib['class']
+            vprint( VVERBOSE, line )
+            if line.attrib.has_key('class'):
+              text_class = line.attrib['class']
+            else:
+              text_class = None
             if text_class in [ 'ocr_line', 'ocrx_word', 'ocr_carea', 'ocr_par' ]:
               
               if text_class == 'ocr_line':
@@ -399,7 +409,7 @@ class HocrConverter():
               # write the text to the page
               text.textLine( textContent )
 
-              print "processing", text_class, coords,"->", text_corner1x, text_corner1y, text_corner2x, text_corner2y, ":", textContent
+              vprint( VVERBOSE, "processing", text_class, coords,"->", text_corner1x, text_corner1y, text_corner2x, text_corner2y, ":", textContent )
               pdf.drawText(text)
 
               pdf.setLineWidth(0.1)
@@ -409,11 +419,11 @@ class HocrConverter():
               if withVisibleBoundingBoxes: 
                 pdf.rect( text_corner1x, text_corner1y, text_width, text_height);
      
-      # finish up the page. A blank new one is initialized as well.
-      pdf.showPage()
+        # finish up the page. A blank new one is initialized as well.
+        pdf.showPage()
     
     # save the pdf file
-    print "Writing pdf."
+    vprint( INFO, "Writing pdf." )
     pdf.save()
   
   def to_text(self, outFileName):
@@ -426,17 +436,75 @@ class HocrConverter():
 
 def setGlobal( varName ):
   def setValue( value ):
-    print varName, "=", value
+    vprint( VVERBOSE, varName, "=", value )
     globals()[varName] = value;
     return True
   return setValue
 
 def appendGlobal( varName ):
   def appendValue( value ):
-    globals()[varName].append(value)
-    print varName,"=",globals()[varName]
+    globals()[varName].append( value )
+    vprint( VVERBOSE, varName, "=", globals()[varName] )
     return True
   return appendValue
+
+VVERBOSE = 5            # Custom level
+VERBOSE = logging.DEBUG # 10
+INFO = logging.INFO     # 20
+WARN = logging.WARN     # 30
+ERROR = logging.ERROR   # 40
+
+_vprint_text = ""
+
+def vprint( verbosity, *data, **keywords ):
+  """
+  logs depending on verbosity level
+  verbosity levels:
+  VVERBOSE = 5 ( -vv )
+  VERBOSE = 10 ( -v )
+  INFO = 20
+  """
+  
+  if "nolinebreak" in keywords:
+    nolinebreak = keywords["nolinebreak"]
+  else:
+    nolinebreak = False
+
+  global _vprint_text
+
+  out_text = _vprint_text
+  for out in data:
+    if out_text != "":
+      out_text += " "
+    out_text += str(out)
+
+  # If nolinebreak is enabled, save message for next output
+  if nolinebreak:
+    if logging.root.isEnabledFor( verbosity ):
+      _vprint_text = out_text
+  else:
+    _vprint_text = ""
+    logging.log( verbosity, out_text )
+
+def setLogThreshold( cmd_threshold ):
+  
+  if type( cmd_threshold ) == bool :
+    if cmd_threshold == True:     # -q
+      threshold = WARN
+    elif cmd_threshold == False:  # no -q argument
+      return True
+  
+  elif type( cmd_threshold ) == int :
+    if cmd_threshold == 0:        # no -v argument
+      threshold = INFO
+    elif cmd_threshold == 1:      # -v
+      threshold = VERBOSE
+    elif cmd_threshold == 2:      # -vv
+      threshold = VVERBOSE
+
+  logging.root.setLevel( level = threshold )
+  vprint(VVERBOSE, "loglevel:", threshold, "=", logging.getLevelName( threshold) )
+  return True
 
 if __name__ == "__main__":
   # Variables to control program function
@@ -450,12 +518,23 @@ if __name__ == "__main__":
   inputHocrFileName = None
   hocrImageReference = False
   verticalInversion=False
+  logThreshold=logging.INFO
+
+  # Init output/logging
+  logging.addLevelName("VVERBOSE",5)
+  logging.basicConfig(format='%(message)s', level=logging.NOTSET)
 
   # Taking care of command line arguments
   arguments = docopt(__doc__)
-  print(arguments)
   
   # Validation of arguments and setting of global variables
+  # As a first pass check for verbosity settings
+  schema_verbosity = Schema({
+        '-v': setLogThreshold,
+        '-q': setLogThreshold,
+        str: object })
+
+  # Second run for all the other options
   schema = Schema({
         '-i': And( setGlobal( "inputHocrFileName" ), lambda n: Use(open, error="Can't open <inputHocrFile>") if n else True ) ,
         '--help': bool,
@@ -466,16 +545,21 @@ if __name__ == "__main__":
         '-t': setGlobal( "withVisibleOCRText" ),
         '-r': setGlobal( "hocrImageReference" ),
         '-V': setGlobal( "verticalInversion" ),
+        '-v': object,
+        '-q': object,
         '<inputImageFile>': [ And( appendGlobal( "inputImageFileNames" ), Use(open, error="Can't open <inputImageFile>") ) ],
         '-o': setGlobal( "outputPdfFileName" ) })
   try:
-    args = schema.validate(arguments)
+    args = schema_verbosity.validate( arguments )
+    args = schema.validate( arguments )
   except SchemaError as e:
-    print "Error:"
-    print " ",e
-    print "Error Details:"
-    print " ", e.autos
+    vprint( ERROR, "Error:" )
+    vprint( ERROR, " ", e )
+    vprint( ERROR, "Error Details:" )
+    vprint( ERROR, " ", e.autos )
     exit(1) 
 
+  vprint(VVERBOSE, arguments)
+  
   hocr = HocrConverter( inputHocrFileName )
   hocr.to_pdf( inputImageFileNames, outputPdfFileName, withVisibleOCRText=withVisibleOCRText, withVisibleImage=withVisibleImage, withVisibleBoundingBoxes=withVisibleBoundingBoxes, noPictureFromHocr=noPictureFromHocr, multiplePages=multiplePages, hocrImageReference=hocrImageReference, verticalInversion=verticalInversion )
