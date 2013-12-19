@@ -34,6 +34,8 @@ import re
 import sys
 import logging
 import unicodedata
+import resource
+resource.setrlimit(resource.RLIMIT_NOFILE, (1024,-1))
 try:
   from docopt import docopt
 except ImportError:
@@ -254,8 +256,11 @@ class HocrConverter():
       # Check for image from command line 
       if imageFileNames:
         # distinct file
-        if len(imageFileNames) >= page_count:
-          imageFileName = imageFileNames[page_count-1]
+        page_id = len(imageFileNames)
+        if page is not None:
+          page_id = int(page.attrib['id'].replace('page_','')) - 2
+        if (len(imageFileNames) - 1) > page_id :
+          imageFileName = imageFileNames[page_id]
         # repeat the last file
         else:
           imageFileName = imageFileNames[-1]
@@ -268,9 +273,9 @@ class HocrConverter():
 
       vprint ( VERBOSE, "Image file name:", imageFileName )
       
-      vprint ( VERBOSE, "page:", page.tag, page.attrib )
       # Dimensions of ocr-page
       if page is not None:
+        vprint ( VERBOSE, "page:", page.tag, page.attrib )
         coords = self.element_coordinates( page )
       else:
         coords = (0,0,0,0)
@@ -424,7 +429,7 @@ class HocrConverter():
                 if ( textContent == None ):
                   textContent = u""
                 textContent = textContent.rstrip()
-              
+
               # scale the width of the text to fill the width of the line's bbox
               if len(textContent) != 0:
                 text.setHorizScale( ((( float(coords[2])/ocr_dpi[0]*inch ) - ( float(coords[0])/ocr_dpi[0]*inch )) / pdf.stringWidth( textContent, fontname, fontsize))*100)
