@@ -4,7 +4,7 @@
 Convert Files from hOCR to pdf
 
 Usage:
-  HocrConverter.py [-tIbmnrV] [-q | -v | -vv] [-i <inputHocrFile>] (-o <outputPdfFile>) [<inputImageFile>]...
+  HocrConverter.py [-tIcbmnrV] [-q | -v | -vv] [-i <inputHocrFile>] [-f <inputTtfFile>] (-o <outputPdfFile>) [<inputImageFile>]...
   HocrConverter.py (-h | --help)
 
 Options:
@@ -12,7 +12,9 @@ Options:
   -t                    Make ocr-text visible
   -i <inputHocrFile>    hOCR input file
   -o <outputPdfFile>    pdf output
+  -f <inputTtfFile>     use custom TTF font
   -I                    include images
+  -c                    use full line text
   -b                    draw bounding boxes around ocr-text
   -n                    don't read images supplied in hocr-file
   -m                    do multiple pages in hocr and output pdf
@@ -24,11 +26,14 @@ Options:
 
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from xml.etree.ElementTree import ElementTree
 import Image
 import re
 import sys
 import logging
+import unicodedata
 try:
   from docopt import docopt
 except ImportError:
@@ -196,7 +201,7 @@ class HocrConverter():
 
     return text_elements
 
-  def to_pdf(self, imageFileNames, outFileName, fontname="Courier", fontsize=8, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False, hocrImageReference=False, verticalInversion=False ):
+  def to_pdf(self, imageFileNames, outFileName, fontname="Courier", fontsize=12, withVisibleOCRText=False, withVisibleImage=True, withVisibleBoundingBoxes=False, noPictureFromHocr=False, multiplePages=False, hocrImageReference=False, verticalInversion=False ):
     """
     Creates a PDF file with an image superimposed on top of the text.
     
@@ -209,10 +214,14 @@ class HocrConverter():
    
     # create the PDF file 
     pdf = Canvas(outFileName, pageCompression=1)
-    
+
     if self.hocr is None:
       # warn that no text will be embedded in the output PDF
       vprint( WARN, "Warning: No hOCR file specified. PDF will be image-only." )
+
+    if inputFontFileName is not None:
+      pdfmetrics.registerFont(TTFont('Custom', inputFontFileName))
+      fontname = "Custom"
     
     # Collect pages from hOCR
     pages = []
@@ -370,10 +379,10 @@ class HocrConverter():
             if text_class in [ 'ocr_line', 'ocrx_word', 'ocr_carea', 'ocr_par' ]:
               
               if text_class == 'ocr_line':
-                textColor = (255,0,0)
+                textColor = (0,0,0)
                 bboxColor = (0,255,0)
               elif text_class == 'ocrx_word' :
-                textColor = (255,0,0)
+                textColor = (0,0,0)
                 bboxColor = (0,255,255)
               elif text_class == 'ocr_carea' :
                 textColor = (255,0,0)
@@ -407,12 +416,15 @@ class HocrConverter():
               # set cursor to bottom left corner of line bbox (adjust for dpi)
               text.setTextOrigin( text_corner1x, text_corner1y )
            
-              # The content of the text to write  
-              textContent = line.text
-              if ( textContent == None ):
-                textContent = u""
-              textContent = textContent.rstrip()
-
+              # The content of the text to write
+              if withFullLineText:
+                textContent = unicodedata.normalize("NFC",unicode(" ".join([elem for elem in map((lambda text: text.strip()),line.itertext()) if len(elem) > 0])))
+              else:
+                textContent = line.text
+                if ( textContent == None ):
+                  textContent = u""
+                textContent = textContent.rstrip()
+              
               # scale the width of the text to fill the width of the line's bbox
               if len(textContent) != 0:
                 text.setHorizScale( ((( float(coords[2])/ocr_dpi[0]*inch ) - ( float(coords[0])/ocr_dpi[0]*inch )) / pdf.stringWidth( textContent, fontname, fontsize))*100)
@@ -530,12 +542,14 @@ if __name__ == "__main__":
   # Variables to control program function
   withVisibleOCRText = False;
   withVisibleImage = True;
+  withFullLineText = False;
   withVisibleBoundingBoxes = False;
   noPictureFromHocr = False
   multiplePages = False
   inputImageFileNames = []
   inputImageFileName = None
   inputHocrFileName = None
+  inputFontFileName = None
   hocrImageReference = False
   verticalInversion=False
   logThreshold=logging.INFO
@@ -557,8 +571,10 @@ if __name__ == "__main__":
   # Second run for all the other options
   schema = Schema({
         '-i': And( setGlobal( "inputHocrFileName" ), lambda n: Use(open, error="Can't open <inputHocrFile>") if n else True ) ,
+        '-f': And( setGlobal( "inputFontFileName" ), lambda n: Use(open, error="Can't open <inputFontFileName>") if n else True ),
         '--help': bool,
         '-I': setGlobal( "withVisibleImage" ),
+        '-c': setGlobal( "withFullLineText" ),
         '-b': setGlobal( "withVisibleBoundingBoxes" ),
         '-m': setGlobal( "multiplePages" ),
         '-n': setGlobal( "noPictureFromHocr" ),
