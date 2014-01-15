@@ -238,7 +238,7 @@ class HocrConverter():
     vprint( VVERBOSE, len(pages), "pages;", len(imageFileNames), "image files from command line." ) 
     
     page_count = 0
-    ocr_page_count = 0
+    ocr_page_count = 1
     # loop pages
     while True:
       page_count += 1
@@ -246,9 +246,10 @@ class HocrConverter():
       vprint( VERBOSE, "page", page_count )
       
       if len(pages) >= page_count:
-        if int(pages[ocr_page_count].attrib['id'].replace('page_','')) != (page_count + 1):
+        ocr_page_id = int(pages[ocr_page_count].attrib['id'].replace('page_',''))
+        if ocr_page_id != (page_count + 1):
           page = None
-          vprint( VERBOSE, "skipping ocr at", ocr_page_count, pages[ocr_page_count].attrib['id'] )
+          vprint( VERBOSE, "skipping ocr at", ocr_page_count, ocr_page_id )
         else:
           page = pages[ocr_page_count]
           ocr_page_count += 1
