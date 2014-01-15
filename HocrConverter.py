@@ -29,7 +29,7 @@ from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from xml.etree.ElementTree import ElementTree
-import Image
+from PIL import Image
 import re
 import sys
 import logging
@@ -159,9 +159,11 @@ class HocrConverter():
       width = float(im.size[0])/im.info['dpi'][0]
       height = float(im.size[1])/im.info['dpi'][1]
     else:
+      width = float(im.size[0])/300.0
+      height = float(im.size[1])/300.0
       # we have to make a reasonable guess
       # set to None for now and try again using info from hOCR file
-      width = height = None
+      # width = height = None
     
     return (im, width, height)
 
@@ -236,13 +238,20 @@ class HocrConverter():
     vprint( VVERBOSE, len(pages), "pages;", len(imageFileNames), "image files from command line." ) 
     
     page_count = 0
+    ocr_page_count = 0
     # loop pages
     while True:
       page_count += 1
+
       vprint( VERBOSE, "page", page_count )
       
       if len(pages) >= page_count:
-        page = pages[page_count-1] 
+        if int(pages[ocr_page_count].attrib['id'].replace('page_','')) != (page_count + 1):
+          page = None
+          vprint( VERBOSE, "skipping ocr at", ocr_page_count, pages[ocr_page_count].attrib['id'] )
+        else:
+          page = pages[ocr_page_count]
+          ocr_page_count += 1
       else:
         page = None
 
@@ -252,13 +261,15 @@ class HocrConverter():
           break # there shouldn't be more than one, and if there is, we don't want it
      
       imageFileName = None
-      
+
       # Check for image from command line 
       if imageFileNames:
         # distinct file
-        page_id = len(imageFileNames)
-        if page is not None:
-          page_id = int(page.attrib['id'].replace('page_','')) - 2
+        # page_id = len(imageFileNames)
+        # if page is not None:
+          # page_id = int(page.attrib['id'].replace('page_','')) - 2
+          # print page_id
+        page_id = page_count - 1
         if (len(imageFileNames) - 1) > page_id :
           imageFileName = imageFileNames[page_id]
         # repeat the last file
@@ -286,7 +297,7 @@ class HocrConverter():
       # Load command line image
       if imageFileName:
         im, width, height = self._setup_image(imageFileName)
-        vprint( VVERBOSE, "width, heigth:", width, height )
+        vprint( VERBOSE, "width, heigth:", width, height )
       else:
         im = width = height = None
         
@@ -335,7 +346,7 @@ class HocrConverter():
      
         vprint( VERBOSE, "ocrwidth, ocrheight :", ocrwidth, ocrheight )
      
-      if ( ( not ocrwidth ) and ( ( not width ) or ( not withVisibleImage ) ) ) or ( ( not ocrheight) and ( ( not height ) or ( not withVisibleImage ) ) ):
+      if ( ( not ocrwidth ) and ( not width ) ) or ( ( not ocrheight) and ( not height ) ):
         vprint( WARN, "Page with extension 0 or without content. Skipping." )
       else:
 
@@ -371,7 +382,7 @@ class HocrConverter():
             vprint( INFO, "No inline image file supplied." )
        
         # put ocr-content on the page 
-        if self.hocr is not None:
+        if (self.hocr is not None) and (page is not None):
           text_elements = self.getTextElements( page )
           
           for line in text_elements:
