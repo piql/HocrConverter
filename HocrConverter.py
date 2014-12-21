@@ -29,7 +29,7 @@ from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from xml.etree.ElementTree import ElementTree
-import Image
+import PIL.Image
 import re
 import sys
 import logging
