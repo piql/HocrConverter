@@ -125,7 +125,7 @@ class HocrConverter():
     """
     text_coords = (0,0,0,0)
     parse_result = self.parse_element_title( element )
-    if parse_result.has_key("bbox"):
+    if "bbox" in parse_result:
           text_coords = parse_result["bbox"]
 
     return text_coords
@@ -148,7 +148,7 @@ class HocrConverter():
     
     vprint( INFO, "Image File:", imageFileName )
       
-    im = Image.open(imageFileName)
+    im = PIL.Image.open(imageFileName)
     imwidthpx, imheightpx = im.size
     
     vprint( VERBOSE, "Image Dimensions:", im.size )
@@ -292,7 +292,7 @@ class HocrConverter():
         parse_result = self.parse_element_title( page )
         vprint( VVERBOSE, "ocr_page file ?" )
         vprint( VVERBOSE, "Parse Results:",parse_result )
-        if parse_result.has_key( "file" ):
+        if "file" in parse_result:
           imageFileName_ocr_page = parse_result["file"] 
           vprint( VERBOSE, "ocr_page file", imageFileName_ocr_page, nolinebreak=True )
         
@@ -372,7 +372,7 @@ class HocrConverter():
           for line in text_elements:
             import pdb
             vprint( VVERBOSE, line.tag, line.attrib )
-            if line.attrib.has_key('class'):
+            if 'class' in line.attrib:
               text_class = line.attrib['class']
             else:
               text_class = None
@@ -508,7 +508,7 @@ def vprint( verbosity, *data, **keywords ):
   for out in data:
     if out_text != "":
       out_text += " "
-    out_text += unicode(out)
+    out_text += str(out)
 
   # If nolinebreak is enabled, save message for next output
   if nolinebreak:
