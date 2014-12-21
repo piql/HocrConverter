@@ -31,4 +31,8 @@ Like this the script is rather something to understand the concept.
 
 Maybe it's useful for others trying to understand OCR.
 
+Changes by tristelune1
+
+- this script is for python3
+
 Work in progress.
