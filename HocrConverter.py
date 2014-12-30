@@ -424,6 +424,8 @@ class HocrConverter():
                 if ( textContent == None ):
                   textContent = line.findtext("%sstrong"%(self.xmlns))
                 if ( textContent == None ):
+                  textContent = line.findtext("%sem"%(self.xmlns))
+                if ( textContent == None ):
                   textContent = u""
                 textContent = textContent.rstrip()
               
