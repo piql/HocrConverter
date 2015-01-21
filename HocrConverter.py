@@ -428,7 +428,6 @@ class HocrConverter():
                 # contain only non tag span like <strong> or <em>
                   span_child = 0
                   for child_tag in line.iter("%sspan"%(self.xmlns)):
-                    print(child_tag)
                     span_child = span_child + 1
                 # The line.tag contain no other <span> tag.
                 # It can contains some text. We search recursively
