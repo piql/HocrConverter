@@ -421,10 +421,23 @@ class HocrConverter():
                 textContent = unicodedata.normalize("NFC",unicode(" ".join([elem for elem in map((lambda text: text.strip()),line.itertext()) if len(elem) > 0])))
               else:
                 textContent = line.text
-                if ( textContent == None ):
-                  textContent = line.findtext("%sstrong"%(self.xmlns))
-                if ( textContent == None ):
-                  textContent = line.findtext("%sem"%(self.xmlns))
+                if ( textContent == None):
+                # Text in tag can be embeded in other tags. In that case
+                # we need to search recursively in all tags
+                # We search recursively only in tags <span> which
+                # contain only non tag span like <strong> or <em>
+                  span_child = 0
+                  for child_tag in line.iter("%sspan"%(self.xmlns)):
+                    print(child_tag)
+                    span_child = span_child + 1
+                # The line.tag contain no other <span> tag.
+                # It can contains some text. We search recursively
+                # in all tags contained in this <span> tag
+                  if span_child == 1:
+                    for string_text in line.itertext():
+                      if string_text != None:
+                         textContent = string_text
+                         break
                 if ( textContent == None ):
                   textContent = u""
                 textContent = textContent.rstrip()

@@ -34,5 +34,6 @@ Maybe it's useful for others trying to understand OCR.
 Changes by tristelune1
 
 - this script is for python3
+- text is search recursively in span tags 
 
 Work in progress.
