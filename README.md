@@ -23,10 +23,6 @@ Some command line arguments:
  - include Images ( from hOCR or via command line )
  - verbosity
 
-For command line parsing and validation I use some external libraries:
-- docopt
-- schema
-
 Like this the script is rather something to understand the concept.
 
 Maybe it's useful for others trying to understand OCR.
@@ -37,3 +33,12 @@ Changes by tristelune1
 - text is search recursively in span tags 
 
 Work in progress.
+
+# Install
+For command line parsing and validation I use some external libraries:
+- docopt
+- schema
+
+```
+python -m pip install reportlab pdfgen schema image docopt
+```
