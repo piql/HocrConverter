@@ -10,7 +10,7 @@ Usage:
 Options:
   -h --help             Show this screen.
   -t                    Make ocr-text visible
-  -i <inputHocrFile>    hOCR input file
+  -i <inputHocrFile>    hOCR input file, - for STDIN
   -o <outputPdfFile>    pdf output
   -f <inputTtfFile>     use custom TTF font
   -I                    include images
@@ -28,7 +28,7 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from xml.etree.ElementTree import ElementTree
+from xml.etree import ElementTree as etree
 import PIL.Image
 import re
 import sys
@@ -129,13 +129,18 @@ class HocrConverter():
           text_coords = parse_result["bbox"]
 
     return text_coords
-    
+
   def parse_hocr(self, hocrFileName):
     """
     Reads an XML/XHTML file into an ElementTree object
     """
-    self.hocr = ElementTree()
-    self.hocr.parse(hocrFileName)
+    self.hocr = etree.ElementTree()
+    if hocrFileName == "-":
+      stdinstring = sys.stdin.read()
+      vprint( VERBOSE, stdinstring.replace("\n", "") )
+      self.hocr = etree.ElementTree(etree.fromstring(stdinstring))
+    else:
+      self.hocr.parse(hocrFileName)
     
     # if the hOCR file has a namespace, ElementTree requires its use to find elements
     matches = re.match('({.*})html', self.hocr.getroot().tag)
