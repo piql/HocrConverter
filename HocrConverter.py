@@ -136,8 +136,13 @@ class HocrConverter():
     """
     self.hocr = etree.ElementTree()
     if hocrFileName == "-":
-      stdinstring = sys.stdin.read()
-      vprint( VERBOSE, stdinstring.replace("\n", "") )
+      try:
+        input = sys.stdin.buffer
+      except AttributeError:
+        input = sys.stdin
+
+      stdinstring = input.read()
+      vprint( VERBOSE, stdinstring )
       self.hocr = etree.ElementTree(etree.fromstring(stdinstring))
     else:
       self.hocr.parse(hocrFileName)
